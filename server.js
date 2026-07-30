@@ -41,7 +41,10 @@ app.use(express.static('public'));
 
 // Cau hinh session: luu vao database, khong luu tren o dia tam
 app.use(session({
-  store: new pgSession({ pool: pool }),
+  store: new pgSession({
+    pool: pool,
+    createTableIfMissing: true
+  }),
   secret: 'day-la-chuoi-bi-mat-doi-sau-nay',
   resave: false,
   saveUninitialized: false,
