@@ -1,5 +1,6 @@
 const express = require('express');
 const { Pool } = require('pg');
+const multer = require('multer');
 const bcrypt = require('bcrypt');
 const session = require('express-session');
 const pgSession = require('connect-pg-simple')(session);
@@ -40,6 +41,8 @@ async function initDb() {
   console.log('Database da san sang.');
 }
 
+// Cau hinh multer: luu file tam trong bo nho (RAM), khong ghi ra o dia
+const upload = multer({ storage: multer.memoryStorage() });
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 
@@ -178,10 +181,20 @@ app.get('/logout', (req, res) => {
 app.get('/', requireLogin, (req, res) => {
   const content = `
     <h1>Tao landing page cua ban</h1>
-    <p class="subtitle">Dan code HTML, nhan link ngay. <a href="/logout">Dang xuat</a></p>
+    <p class="subtitle">Upload file HTML hoac dan code truc tiep. <a href="/logout">Dang xuat</a></p>
 
     <div class="card">
-      <h2>Dan code HTML truc tiep</h2>
+      <h2>Cach 1: Upload file HTML</h2>
+      <form action="/upload" method="POST" enctype="multipart/form-data">
+        <input type="file" name="htmlFile" accept=".html" required />
+        <button type="submit">Upload</button>
+      </form>
+    </div>
+
+    <div class="divider">hoac</div>
+
+    <div class="card">
+      <h2>Cach 2: Dan code HTML truc tiep</h2>
       <form action="/paste" method="POST">
         <textarea name="htmlCode" rows="12" placeholder="Dan code HTML vao day..."></textarea>
         <button type="submit">Tao trang</button>
@@ -191,6 +204,38 @@ app.get('/', requireLogin, (req, res) => {
     <p><a href="/pages">Xem cac trang cua ban &rarr;</a></p>
   `;
   res.send(layout(content));
+});
+
+// Route moi: xu ly upload file, doc noi dung roi luu vao database
+app.post('/upload', requireLogin, upload.single('htmlFile'), async (req, res) => {
+  if (!req.file) {
+    return res.send(layout('<p>Khong co file nao duoc gui len.</p><a class="link-back" href="/">&larr; Quay lai</a>'));
+  }
+
+  // req.file.buffer chua noi dung file duoi dang du lieu nhi phan, chuyen thanh text
+  const htmlCode = req.file.buffer.toString('utf-8');
+  const id = require('crypto').randomBytes(6).toString('hex');
+  const name = req.file.originalname;
+
+  try {
+    await pool.query(
+      'INSERT INTO pages (id, name, html_content, owner_id) VALUES ($1, $2, $3, $4)',
+      [id, name, htmlCode, req.session.userId]
+    );
+
+    const content = `
+      <div class="card" style="text-align: center;">
+        <div class="success-icon">&#9989;</div>
+        <h2>Upload thanh cong!</h2>
+        <p>Xem trang tai: <a href="/page/${id}" target="_blank">/page/${id}</a></p>
+        <a class="link-back" href="/">&larr; Quay lai</a>
+      </div>
+    `;
+    res.send(layout(content));
+  } catch (err) {
+    console.error(err);
+    res.status(500).send(layout('<p>Co loi khi luu vao database.</p>'));
+  }
 });
 
 app.post('/paste', requireLogin, async (req, res) => {
