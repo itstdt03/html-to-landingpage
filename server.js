@@ -28,9 +28,13 @@ async function initDb() {
       id TEXT PRIMARY KEY,
       name TEXT NOT NULL,
       html_content TEXT NOT NULL,
-      owner_id INTEGER REFERENCES users(id),
       created_at TIMESTAMP DEFAULT NOW()
     )
+  `);
+
+  // Va cau truc bang cu: them cot owner_id neu chua co
+  await pool.query(`
+    ALTER TABLE pages ADD COLUMN IF NOT EXISTS owner_id INTEGER REFERENCES users(id)
   `);
 
   console.log('Database da san sang.');
