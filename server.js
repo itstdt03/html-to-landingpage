@@ -76,10 +76,16 @@ function layout(content) {
     <html lang="vi">
     <head>
       <meta charset="UTF-8" />
-      <title>HTML to Landingpage</title>
+      <title>Trạm Xuất Bản</title>
       <link rel="stylesheet" href="/style.css" />
     </head>
     <body>
+      <header class="topbar">
+        <a href="/" class="brand">
+          <span class="stamp-mark"></span>
+          <span class="brand-name">Trạm Xuất Bản</span>
+        </a>
+      </header>
       <div class="container">
         ${content}
       </div>
@@ -98,7 +104,6 @@ function requireLogin(req, res, next) {
 const TRACKER_MARKER = 'FORM_TRACKER_V1';
 
 function injectFormTracker(htmlCode, pageId) {
-  // Neu da co san script thu form roi thi khong chen them lan nua, tranh trung lap
   if (htmlCode.includes(TRACKER_MARKER)) {
     return htmlCode;
   }
@@ -141,11 +146,13 @@ app.get('/register', (req, res) => {
     <h1>Đăng ký tài khoản</h1>
     <div class="card">
       <form action="/register" method="POST">
-        <input type="email" name="email" placeholder="Email" required style="display:block; width:100%; padding:10px; margin-bottom:12px;" />
-        <input type="password" name="password" placeholder="Mật khẩu" required style="display:block; width:100%; padding:10px; margin-bottom:16px;" />
-        <button type="submit">Đăng ký</button>
+        <label>Email</label>
+        <input type="email" name="email" placeholder="ban@email.com" required style="margin-bottom:14px;" />
+        <label>Mật khẩu</label>
+        <input type="password" name="password" placeholder="Tối thiểu 6 ký tự" required style="margin-bottom:18px;" />
+        <button type="submit" class="btn-block">Đăng ký</button>
       </form>
-      <p style="margin-top:16px;">Đã có tài khoản? <a href="/login">Đăng nhập</a></p>
+      <p style="margin-top:16px; font-size:13px;">Đã có tài khoản? <a href="/login">Đăng nhập</a></p>
     </div>
   `;
   res.send(layout(content));
@@ -181,11 +188,13 @@ app.get('/login', (req, res) => {
     <h1>Đăng nhập</h1>
     <div class="card">
       <form action="/login" method="POST">
-        <input type="email" name="email" placeholder="Email" required style="display:block; width:100%; padding:10px; margin-bottom:12px;" />
-        <input type="password" name="password" placeholder="Mật khẩu" required style="display:block; width:100%; padding:10px; margin-bottom:16px;" />
-        <button type="submit">Đăng nhập</button>
+        <label>Email</label>
+        <input type="email" name="email" placeholder="ban@email.com" required style="margin-bottom:14px;" />
+        <label>Mật khẩu</label>
+        <input type="password" name="password" placeholder="Mật khẩu của bạn" required style="margin-bottom:18px;" />
+        <button type="submit" class="btn-block">Đăng nhập</button>
       </form>
-      <p style="margin-top:16px;">Chưa có tài khoản? <a href="/register">Đăng ký</a></p>
+      <p style="margin-top:16px; font-size:13px;">Chưa có tài khoản? <a href="/register">Đăng ký</a></p>
     </div>
   `;
   res.send(layout(content));
@@ -219,7 +228,7 @@ app.get('/logout', (req, res) => {
   });
 });
 
-// ============ TRANG TỔNG QUAN (dashboard) ============
+// ============ TRANG TỔNG QUAN ============
 app.get('/', requireLogin, async (req, res) => {
   try {
     const result = await pool.query(
@@ -237,43 +246,38 @@ app.get('/', requireLogin, async (req, res) => {
       <h1>Landing page của bạn</h1>
       <p class="subtitle">Xây, xuất bản và theo dõi landing page. <a href="/logout">Đăng xuất</a></p>
 
-      <a href="/create" style="display:block; text-align:center; background:#111; color:#fff; padding:14px; border-radius:10px; font-weight:700; margin-bottom:28px;">+ Tạo landing page</a>
-
-      <div class="card">
+      <a href="/create" class="btn btn-block" style="margin-bottom:28px;">+ Tạo landing page</a>
     `;
 
     if (pages.length === 0) {
-      listHtml += '<p>Chưa có trang nào. Bấm "Tạo landing page" để bắt đầu.</p>';
+      listHtml += '<div class="card"><p style="font-size:14px; color:var(--ink-soft);">Chưa có trang nào. Bấm "Tạo landing page" để bắt đầu.</p></div>';
     } else {
-      listHtml += '<ul class="page-list">';
       pages.forEach(page => {
         const leadCount = parseInt(page.lead_count, 10);
         const views = page.views || 0;
         const conversionRate = views > 0 ? ((leadCount / views) * 100).toFixed(1) : '0.0';
         const isLive = page.status === 'live';
         const badge = isLive
-          ? '<span style="background:#E7F5EC; color:#1E8A4C; font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; white-space:nowrap;">&#9679; Đang chạy</span>'
-          : '<span style="background:#F0F0EC; color:#888; font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; white-space:nowrap;">&#9675; Nháp</span>';
+          ? '<span class="badge badge-live">&#9679; Đang chạy</span>'
+          : '<span class="badge badge-draft">&#9675; Nháp</span>';
 
         listHtml += `
-          <li style="display:block;">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:8px;">
-              <a href="/page/${page.id}/manage" style="font-weight:700;">${page.name}</a>
+          <div class="page-card">
+            <div class="page-card-top">
+              <a href="/page/${page.id}/manage">${page.name}</a>
               ${badge}
             </div>
-            <div style="display:flex; gap:16px; font-size:12px; color:#888; flex-wrap:wrap;">
+            <div class="page-stats">
               <span><strong>${views}</strong> lượt xem</span>
               <span><strong>${leadCount}</strong> lead</span>
               <span><strong>${conversionRate}%</strong> chuyển đổi</span>
               <span>${new Date(page.created_at).toLocaleString('vi-VN')}</span>
             </div>
-          </li>
+          </div>
         `;
       });
-      listHtml += '</ul>';
     }
 
-    listHtml += '</div>';
     res.send(layout(listHtml));
   } catch (err) {
     console.error(err);
@@ -291,25 +295,25 @@ app.get('/create', requireLogin, (req, res) => {
     <h1>Tạo landing page từ HTML</h1>
     <p class="subtitle"><a href="/">&larr; Quay lại tổng quan</a></p>
 
-    <div class="card" style="background: #eff6ff; border-color: #bfdbfe; color: #1e40af; font-size: 14px;">
+    <div class="card" style="font-size:13.5px; color:var(--ink-soft);">
       Dán hoặc upload 1 file HTML → hệ thống tự động xuất bản thành trang riêng của bạn.
     </div>
 
     <div class="card">
       <form action="/paste" method="POST">
-        <label style="display:block; font-weight: 600; margin-bottom: 6px;">Tiêu đề trang <span style="color:#dc2626;">*</span></label>
-        <input type="text" name="pageName" placeholder="Vd: Landing ra mắt khóa học" required style="display:block; width:100%; padding:10px; margin-bottom:16px;" />
+        <label>Tiêu đề trang</label>
+        <input type="text" name="pageName" placeholder="Vd: Landing ra mắt khóa học" required style="margin-bottom:18px;" />
 
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
-          <label style="font-weight: 600;">Nội dung HTML <span style="color:#dc2626;">*</span></label>
-          <label style="color: #4f46e5; cursor: pointer; font-size: 14px;">
+          <label style="margin-bottom:0;">Nội dung HTML</label>
+          <label style="font-weight:600; cursor: pointer; font-size: 13px; margin-bottom:0;">
             Upload .html
             <input type="file" id="fileUploadInput" accept=".html" style="display:none;" />
           </label>
         </div>
         <textarea name="htmlCode" id="htmlCodeArea" rows="14" placeholder="<!doctype html> ... dán HTML ở đây ..." required></textarea>
 
-        <button type="submit" style="width: 100%; margin-top: 16px; padding: 14px;">Tạo landing page</button>
+        <button type="submit" class="btn-block" style="margin-top: 16px;">Tạo landing page</button>
       </form>
     </div>
 
@@ -349,8 +353,8 @@ app.post('/upload', requireLogin, upload.single('htmlFile'), async (req, res) =>
     const content = `
       <div class="card" style="text-align: center;">
         <div class="success-icon">&#9989;</div>
-        <h2>Upload thành công!</h2>
-        <p>Xem trang tại: <a href="/page/${id}" target="_blank">/page/${id}</a></p>
+        <h2 style="text-transform:none; font-size:16px; color:var(--ink);">Upload thành công!</h2>
+        <p style="margin:8px 0;">Xem trang tại: <a href="/page/${id}" target="_blank">/page/${id}</a></p>
         <a class="link-back" href="/">&larr; Quay lại tổng quan</a>
       </div>
     `;
@@ -385,8 +389,8 @@ app.post('/paste', requireLogin, async (req, res) => {
     const content = `
       <div class="card" style="text-align: center;">
         <div class="success-icon">&#9989;</div>
-        <h2>Tạo trang thành công!</h2>
-        <p>Xem trang tại: <a href="/page/${id}" target="_blank">/page/${id}</a></p>
+        <h2 style="text-transform:none; font-size:16px; color:var(--ink);">Tạo trang thành công!</h2>
+        <p style="margin:8px 0;">Xem trang tại: <a href="/page/${id}" target="_blank">/page/${id}</a></p>
         <a class="link-back" href="/">&larr; Quay lại tổng quan</a>
       </div>
     `;
@@ -420,22 +424,22 @@ app.get('/page/:id/manage', requireLogin, async (req, res) => {
 
       <div class="card">
         <h2>Xem trước</h2>
-        <iframe src="/page/${id}/preview" style="width:100%; height:400px; border:1px solid #e5e7eb; border-radius:8px;"></iframe>
+        <iframe src="/page/${id}/preview" class="iframe-preview"></iframe>
       </div>
 
       <div class="card">
         <h2>Đổi tên trang</h2>
         <form action="/page/${id}/rename" method="POST" style="display:flex; gap:8px;">
-          <input type="text" name="newName" value="${page.name}" style="flex:1; padding:10px;" />
-          <button type="submit">Lưu tên</button>
+          <input type="text" name="newName" value="${page.name}" style="flex:1;" />
+          <button type="submit">Lưu</button>
         </form>
       </div>
 
       <div class="card">
         <h2>Trạng thái</h2>
-        <p style="margin-bottom:12px; font-size:14px; color:#666;">Trang đang ở chế độ: <strong>${isLive ? 'Đang chạy (công khai)' : 'Nháp (chỉ bạn xem được)'}</strong></p>
+        <p style="margin-bottom:14px; font-size:14px; color:var(--ink-soft);">Trang đang ở chế độ: <strong style="color:var(--ink);">${isLive ? 'Đang chạy (công khai)' : 'Nháp (chỉ bạn xem được)'}</strong></p>
         <form action="/page/${id}/toggle-status" method="POST">
-          <button type="submit">${isLive ? 'Chuyển sang Nháp' : 'Xuất bản (chuyển Live)'}</button>
+          <button type="submit" class="${isLive ? 'btn-secondary' : ''}">${isLive ? 'Chuyển sang Nháp' : 'Xuất bản (chuyển Live)'}</button>
         </form>
       </div>
 
@@ -443,16 +447,16 @@ app.get('/page/:id/manage', requireLogin, async (req, res) => {
         <h2>Sửa nội dung HTML</h2>
         <form action="/page/${id}/update-html" method="POST">
           <textarea name="htmlCode" rows="14">${page.html_content}</textarea>
-          <button type="submit" style="width:100%; margin-top:12px; padding:14px;">Lưu thay đổi</button>
+          <button type="submit" class="btn-block" style="margin-top:12px;">Lưu thay đổi</button>
         </form>
       </div>
 
-      <p><a href="/page/${id}/submissions">Xem dữ liệu form &rarr;</a></p>
+      <p style="margin-bottom:18px;"><a href="/page/${id}/submissions">Xem dữ liệu form &rarr;</a></p>
 
-      <div class="card" style="border-color:#fecaca;">
-        <h2 style="color:#dc2626;">Vùng nguy hiểm</h2>
+      <div class="card danger-zone">
+        <h2>Vùng nguy hiểm</h2>
         <form action="/page/${id}/delete" method="POST" onsubmit="return confirm('Bạn chắc chắn muốn xóa trang này? Không thể hoàn tác.');">
-          <button type="submit" style="background:#dc2626;">Xóa trang này</button>
+          <button type="submit" class="btn-danger">Xóa trang này</button>
         </form>
       </div>
     `;
@@ -463,7 +467,6 @@ app.get('/page/:id/manage', requireLogin, async (req, res) => {
   }
 });
 
-// Xem truoc noi dung that, danh cho chu trang - xem duoc ca khi dang o che do Nhap, khong tinh luot xem
 app.get('/page/:id/preview', requireLogin, async (req, res) => {
   const id = req.params.id;
 
@@ -484,7 +487,6 @@ app.get('/page/:id/preview', requireLogin, async (req, res) => {
   }
 });
 
-// Luu lai HTML da chinh sua tu trang quan ly
 app.post('/page/:id/update-html', requireLogin, async (req, res) => {
   const id = req.params.id;
   const htmlCode = req.body.htmlCode;
@@ -585,8 +587,8 @@ app.get('/page/:id/submissions', requireLogin, async (req, res) => {
           .map(([key, value]) => `<strong>${key}:</strong> ${value}`)
           .join(' &nbsp;|&nbsp; ');
         html += `
-          <li style="display: block;">
-            <div>${fields}</div>
+          <li style="display: block; padding: 12px 0; border-bottom: 1px solid var(--border-soft);">
+            <div style="font-size:13.5px;">${fields}</div>
             <div class="page-time">${new Date(row.created_at).toLocaleString('vi-VN')}</div>
           </li>
         `;
