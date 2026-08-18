@@ -95,8 +95,16 @@ function requireLogin(req, res, next) {
   next();
 }
 
+const TRACKER_MARKER = 'FORM_TRACKER_V1';
+
 function injectFormTracker(htmlCode, pageId) {
+  // Neu da co san script thu form roi thi khong chen them lan nua, tranh trung lap
+  if (htmlCode.includes(TRACKER_MARKER)) {
+    return htmlCode;
+  }
+
   const trackerScript = `
+<!-- ${TRACKER_MARKER} -->
 <script>
 (function() {
   document.querySelectorAll('form').forEach(function(form) {
@@ -250,27 +258,14 @@ app.get('/', requireLogin, async (req, res) => {
         listHtml += `
           <li style="display:block;">
             <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:8px;">
-              <a href="/page/${page.id}" target="_blank" style="font-weight:700;">${page.name}</a>
+              <a href="/page/${page.id}/manage" style="font-weight:700;">${page.name}</a>
               ${badge}
             </div>
-            <div style="display:flex; gap:16px; font-size:12px; color:#888; margin-bottom:8px; flex-wrap:wrap;">
+            <div style="display:flex; gap:16px; font-size:12px; color:#888; flex-wrap:wrap;">
               <span><strong>${views}</strong> lượt xem</span>
               <span><strong>${leadCount}</strong> lead</span>
               <span><strong>${conversionRate}%</strong> chuyển đổi</span>
               <span>${new Date(page.created_at).toLocaleString('vi-VN')}</span>
-            </div>
-            <div><a href="/page/${page.id}/submissions" style="font-size: 13px;">Xem dữ liệu form &rarr;</a></div>
-            <div style="display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap;">
-              <form action="/page/${page.id}/toggle-status" method="POST">
-                <button type="submit" style="padding: 6px 12px; font-size: 13px;">${isLive ? 'Chuyển sang Nháp' : 'Xuất bản (chuyển Live)'}</button>
-              </form>
-              <form action="/page/${page.id}/rename" method="POST" style="display: flex; gap: 6px;">
-                <input type="text" name="newName" placeholder="Tên mới" style="padding: 6px; font-size: 13px; width: 110px;" />
-                <button type="submit" style="padding: 6px 12px; font-size: 13px;">Đổi tên</button>
-              </form>
-              <form action="/page/${page.id}/delete" method="POST" onsubmit="return confirm('Bạn chắc chắn muốn xóa trang này?');">
-                <button type="submit" style="padding: 6px 12px; font-size: 13px; background: #dc2626;">Xóa</button>
-              </form>
             </div>
           </li>
         `;
@@ -286,7 +281,6 @@ app.get('/', requireLogin, async (req, res) => {
   }
 });
 
-// Giu lai duong link /pages cu, tu dong chuyen ve trang chu de khong hong link cu
 app.get('/pages', requireLogin, (req, res) => {
   res.redirect('/');
 });
@@ -403,6 +397,122 @@ app.post('/paste', requireLogin, async (req, res) => {
   }
 });
 
+// ============ TRANG QUẢN LÝ CHI TIẾT 1 LANDING PAGE ============
+app.get('/page/:id/manage', requireLogin, async (req, res) => {
+  const id = req.params.id;
+
+  try {
+    const result = await pool.query(
+      'SELECT * FROM pages WHERE id = $1 AND owner_id = $2',
+      [id, req.session.userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(403).send(layout('<p>Bạn không có quyền quản lý trang này.</p>'));
+    }
+
+    const page = result.rows[0];
+    const isLive = page.status === 'live';
+
+    const content = `
+      <h1>${page.name}</h1>
+      <p class="subtitle"><a href="/">&larr; Quay lại tổng quan</a></p>
+
+      <div class="card">
+        <h2>Xem trước</h2>
+        <iframe src="/page/${id}/preview" style="width:100%; height:400px; border:1px solid #e5e7eb; border-radius:8px;"></iframe>
+      </div>
+
+      <div class="card">
+        <h2>Đổi tên trang</h2>
+        <form action="/page/${id}/rename" method="POST" style="display:flex; gap:8px;">
+          <input type="text" name="newName" value="${page.name}" style="flex:1; padding:10px;" />
+          <button type="submit">Lưu tên</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>Trạng thái</h2>
+        <p style="margin-bottom:12px; font-size:14px; color:#666;">Trang đang ở chế độ: <strong>${isLive ? 'Đang chạy (công khai)' : 'Nháp (chỉ bạn xem được)'}</strong></p>
+        <form action="/page/${id}/toggle-status" method="POST">
+          <button type="submit">${isLive ? 'Chuyển sang Nháp' : 'Xuất bản (chuyển Live)'}</button>
+        </form>
+      </div>
+
+      <div class="card">
+        <h2>Sửa nội dung HTML</h2>
+        <form action="/page/${id}/update-html" method="POST">
+          <textarea name="htmlCode" rows="14">${page.html_content}</textarea>
+          <button type="submit" style="width:100%; margin-top:12px; padding:14px;">Lưu thay đổi</button>
+        </form>
+      </div>
+
+      <p><a href="/page/${id}/submissions">Xem dữ liệu form &rarr;</a></p>
+
+      <div class="card" style="border-color:#fecaca;">
+        <h2 style="color:#dc2626;">Vùng nguy hiểm</h2>
+        <form action="/page/${id}/delete" method="POST" onsubmit="return confirm('Bạn chắc chắn muốn xóa trang này? Không thể hoàn tác.');">
+          <button type="submit" style="background:#dc2626;">Xóa trang này</button>
+        </form>
+      </div>
+    `;
+    res.send(layout(content));
+  } catch (err) {
+    console.error(err);
+    res.status(500).send(layout('<p>Có lỗi khi tải trang quản lý.</p>'));
+  }
+});
+
+// Xem truoc noi dung that, danh cho chu trang - xem duoc ca khi dang o che do Nhap, khong tinh luot xem
+app.get('/page/:id/preview', requireLogin, async (req, res) => {
+  const id = req.params.id;
+
+  try {
+    const result = await pool.query(
+      'SELECT html_content FROM pages WHERE id = $1 AND owner_id = $2',
+      [id, req.session.userId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(403).send('Không có quyền xem trang này.');
+    }
+
+    res.send(result.rows[0].html_content);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send('Có lỗi khi tải bản xem trước.');
+  }
+});
+
+// Luu lai HTML da chinh sua tu trang quan ly
+app.post('/page/:id/update-html', requireLogin, async (req, res) => {
+  const id = req.params.id;
+  const htmlCode = req.body.htmlCode;
+
+  if (!htmlCode || htmlCode.trim() === '') {
+    return res.redirect(`/page/${id}/manage`);
+  }
+
+  try {
+    const check = await pool.query(
+      'SELECT id FROM pages WHERE id = $1 AND owner_id = $2',
+      [id, req.session.userId]
+    );
+
+    if (check.rows.length === 0) {
+      return res.status(403).send(layout('<p>Bạn không có quyền với trang này.</p>'));
+    }
+
+    const finalHtml = injectFormTracker(htmlCode, id);
+    await pool.query('UPDATE pages SET html_content = $1 WHERE id = $2', [finalHtml, id]);
+
+    res.redirect(`/page/${id}/manage`);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send(layout('<p>Có lỗi khi lưu thay đổi.</p>'));
+  }
+});
+
 app.get('/page/:id', async (req, res) => {
   const id = req.params.id;
 
@@ -484,7 +594,7 @@ app.get('/page/:id/submissions', requireLogin, async (req, res) => {
       html += '</ul>';
     }
 
-    html += '</div><a class="link-back" href="/">&larr; Quay lại tổng quan</a>';
+    html += `</div><a class="link-back" href="/page/${pageId}/manage">&larr; Quay lại quản lý trang</a>`;
     res.send(layout(html));
   } catch (err) {
     console.error(err);
@@ -582,7 +692,7 @@ app.post('/page/:id/toggle-status', requireLogin, async (req, res) => {
     const newStatus = check.rows[0].status === 'live' ? 'draft' : 'live';
     await pool.query('UPDATE pages SET status = $1 WHERE id = $2', [newStatus, id]);
 
-    res.redirect('/');
+    res.redirect(`/page/${id}/manage`);
   } catch (err) {
     console.error(err);
     res.status(500).send(layout('<p>Có lỗi khi đổi trạng thái.</p>'));
@@ -606,7 +716,7 @@ app.post('/page/:id/rename', requireLogin, async (req, res) => {
   const newName = req.body.newName;
 
   if (!newName || newName.trim() === '') {
-    return res.redirect('/');
+    return res.redirect(`/page/${id}/manage`);
   }
 
   try {
@@ -614,7 +724,7 @@ app.post('/page/:id/rename', requireLogin, async (req, res) => {
       'UPDATE pages SET name = $1 WHERE id = $2 AND owner_id = $3',
       [newName.trim(), id, req.session.userId]
     );
-    res.redirect('/');
+    res.redirect(`/page/${id}/manage`);
   } catch (err) {
     console.error(err);
     res.status(500).send(layout('<p>Có lỗi khi đổi tên.</p>'));
