@@ -34,15 +34,9 @@ async function initDb() {
     )
   `);
 
-  await pool.query(`
-    ALTER TABLE pages ADD COLUMN IF NOT EXISTS owner_id INTEGER REFERENCES users(id)
-  `);
-    await pool.query(`
-    ALTER TABLE pages ADD COLUMN IF NOT EXISTS views INTEGER DEFAULT 0
-  `);
-  await pool.query(`
-    ALTER TABLE pages ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'live'
-  `);
+  await pool.query(`ALTER TABLE pages ADD COLUMN IF NOT EXISTS owner_id INTEGER REFERENCES users(id)`);
+  await pool.query(`ALTER TABLE pages ADD COLUMN IF NOT EXISTS views INTEGER DEFAULT 0`);
+  await pool.query(`ALTER TABLE pages ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'live'`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS submissions (
@@ -53,9 +47,7 @@ async function initDb() {
     )
   `);
 
-  await pool.query(`
-    ALTER TABLE submissions DROP CONSTRAINT IF EXISTS submissions_page_id_fkey
-  `);
+  await pool.query(`ALTER TABLE submissions DROP CONSTRAINT IF EXISTS submissions_page_id_fkey`);
   await pool.query(`
     ALTER TABLE submissions
     ADD CONSTRAINT submissions_page_id_fkey
@@ -71,10 +63,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(express.static('public'));
 
 app.use(session({
-  store: new pgSession({
-    pool: pool,
-    createTableIfMissing: true
-  }),
+  store: new pgSession({ pool: pool, createTableIfMissing: true }),
   secret: 'day-la-chuoi-bi-mat-doi-sau-nay',
   resave: false,
   saveUninitialized: false,
@@ -167,7 +156,6 @@ app.post('/register', async (req, res) => {
       'INSERT INTO users (email, password_hash) VALUES ($1, $2) RETURNING id',
       [email, hash]
     );
-
     req.session.userId = result.rows[0].id;
     res.redirect('/');
   } catch (err) {
@@ -200,18 +188,14 @@ app.post('/login', async (req, res) => {
 
   try {
     const result = await pool.query('SELECT * FROM users WHERE email = $1', [email]);
-
     if (result.rows.length === 0) {
       return res.send(layout('<p>Email hoặc mật khẩu không đúng.</p><a href="/login">Quay lại</a>'));
     }
-
     const user = result.rows[0];
     const match = await bcrypt.compare(password, user.password_hash);
-
     if (!match) {
       return res.send(layout('<p>Email hoặc mật khẩu không đúng.</p><a href="/login">Quay lại</a>'));
     }
-
     req.session.userId = user.id;
     res.redirect('/');
   } catch (err) {
@@ -227,11 +211,91 @@ app.get('/logout', (req, res) => {
   });
 });
 
-// ============ TRANG CHỦ ============
-app.get('/', requireLogin, (req, res) => {
+// ============ TRANG TỔNG QUAN (dashboard) ============
+app.get('/', requireLogin, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT p.id, p.name, p.created_at, p.views, p.status, COUNT(s.id) AS lead_count
+       FROM pages p
+       LEFT JOIN submissions s ON s.page_id = p.id
+       WHERE p.owner_id = $1
+       GROUP BY p.id
+       ORDER BY p.created_at DESC`,
+      [req.session.userId]
+    );
+    const pages = result.rows;
+
+    let listHtml = `
+      <h1>Landing page của bạn</h1>
+      <p class="subtitle">Xây, xuất bản và theo dõi landing page. <a href="/logout">Đăng xuất</a></p>
+
+      <a href="/create" style="display:block; text-align:center; background:#111; color:#fff; padding:14px; border-radius:10px; font-weight:700; margin-bottom:28px;">+ Tạo landing page</a>
+
+      <div class="card">
+    `;
+
+    if (pages.length === 0) {
+      listHtml += '<p>Chưa có trang nào. Bấm "Tạo landing page" để bắt đầu.</p>';
+    } else {
+      listHtml += '<ul class="page-list">';
+      pages.forEach(page => {
+        const leadCount = parseInt(page.lead_count, 10);
+        const views = page.views || 0;
+        const conversionRate = views > 0 ? ((leadCount / views) * 100).toFixed(1) : '0.0';
+        const isLive = page.status === 'live';
+        const badge = isLive
+          ? '<span style="background:#E7F5EC; color:#1E8A4C; font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; white-space:nowrap;">&#9679; Đang chạy</span>'
+          : '<span style="background:#F0F0EC; color:#888; font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px; white-space:nowrap;">&#9675; Nháp</span>';
+
+        listHtml += `
+          <li style="display:block;">
+            <div style="display:flex; justify-content:space-between; align-items:flex-start; gap:8px; margin-bottom:8px;">
+              <a href="/page/${page.id}" target="_blank" style="font-weight:700;">${page.name}</a>
+              ${badge}
+            </div>
+            <div style="display:flex; gap:16px; font-size:12px; color:#888; margin-bottom:8px; flex-wrap:wrap;">
+              <span><strong>${views}</strong> lượt xem</span>
+              <span><strong>${leadCount}</strong> lead</span>
+              <span><strong>${conversionRate}%</strong> chuyển đổi</span>
+              <span>${new Date(page.created_at).toLocaleString('vi-VN')}</span>
+            </div>
+            <div><a href="/page/${page.id}/submissions" style="font-size: 13px;">Xem dữ liệu form &rarr;</a></div>
+            <div style="display: flex; gap: 8px; align-items: center; margin-top: 10px; flex-wrap: wrap;">
+              <form action="/page/${page.id}/toggle-status" method="POST">
+                <button type="submit" style="padding: 6px 12px; font-size: 13px;">${isLive ? 'Chuyển sang Nháp' : 'Xuất bản (chuyển Live)'}</button>
+              </form>
+              <form action="/page/${page.id}/rename" method="POST" style="display: flex; gap: 6px;">
+                <input type="text" name="newName" placeholder="Tên mới" style="padding: 6px; font-size: 13px; width: 110px;" />
+                <button type="submit" style="padding: 6px 12px; font-size: 13px;">Đổi tên</button>
+              </form>
+              <form action="/page/${page.id}/delete" method="POST" onsubmit="return confirm('Bạn chắc chắn muốn xóa trang này?');">
+                <button type="submit" style="padding: 6px 12px; font-size: 13px; background: #dc2626;">Xóa</button>
+              </form>
+            </div>
+          </li>
+        `;
+      });
+      listHtml += '</ul>';
+    }
+
+    listHtml += '</div>';
+    res.send(layout(listHtml));
+  } catch (err) {
+    console.error(err);
+    res.status(500).send(layout('<p>Có lỗi khi lấy danh sách.</p>'));
+  }
+});
+
+// Giu lai duong link /pages cu, tu dong chuyen ve trang chu de khong hong link cu
+app.get('/pages', requireLogin, (req, res) => {
+  res.redirect('/');
+});
+
+// ============ TRANG TẠO LANDING PAGE MỚI ============
+app.get('/create', requireLogin, (req, res) => {
   const content = `
     <h1>Tạo landing page từ HTML</h1>
-    <p class="subtitle"><a href="/logout">Đăng xuất</a></p>
+    <p class="subtitle"><a href="/">&larr; Quay lại tổng quan</a></p>
 
     <div class="card" style="background: #eff6ff; border-color: #bfdbfe; color: #1e40af; font-size: 14px;">
       Dán hoặc upload 1 file HTML → hệ thống tự động xuất bản thành trang riêng của bạn.
@@ -255,8 +319,6 @@ app.get('/', requireLogin, (req, res) => {
       </form>
     </div>
 
-    <p><a href="/pages">Xem các trang của bạn &rarr;</a></p>
-
     <script>
       document.getElementById('fileUploadInput').addEventListener('change', function(e) {
         const file = e.target.files[0];
@@ -272,10 +334,9 @@ app.get('/', requireLogin, (req, res) => {
   res.send(layout(content));
 });
 
-// Route upload cu - van giu lai phong khi can dung lai, khong con lien ket tu trang chu nua
 app.post('/upload', requireLogin, upload.single('htmlFile'), async (req, res) => {
   if (!req.file) {
-    return res.send(layout('<p>Không có file nào được gửi lên.</p><a class="link-back" href="/">&larr; Quay lại</a>'));
+    return res.send(layout('<p>Không có file nào được gửi lên.</p><a class="link-back" href="/create">&larr; Quay lại</a>'));
   }
 
   const htmlCode = req.file.buffer.toString('utf-8');
@@ -296,7 +357,7 @@ app.post('/upload', requireLogin, upload.single('htmlFile'), async (req, res) =>
         <div class="success-icon">&#9989;</div>
         <h2>Upload thành công!</h2>
         <p>Xem trang tại: <a href="/page/${id}" target="_blank">/page/${id}</a></p>
-        <a class="link-back" href="/">&larr; Quay lại</a>
+        <a class="link-back" href="/">&larr; Quay lại tổng quan</a>
       </div>
     `;
     res.send(layout(content));
@@ -311,11 +372,10 @@ app.post('/paste', requireLogin, async (req, res) => {
   const pageName = req.body.pageName;
 
   if (!htmlCode || htmlCode.trim() === '') {
-    return res.send(layout('<p>Bạn chưa nhập nội dung HTML.</p><a class="link-back" href="/">&larr; Quay lại</a>'));
+    return res.send(layout('<p>Bạn chưa nhập nội dung HTML.</p><a class="link-back" href="/create">&larr; Quay lại</a>'));
   }
-
   if (!pageName || pageName.trim() === '') {
-    return res.send(layout('<p>Bạn chưa đặt tiêu đề cho trang.</p><a class="link-back" href="/">&larr; Quay lại</a>'));
+    return res.send(layout('<p>Bạn chưa đặt tiêu đề cho trang.</p><a class="link-back" href="/create">&larr; Quay lại</a>'));
   }
 
   const id = crypto.randomBytes(6).toString('hex');
@@ -333,7 +393,7 @@ app.post('/paste', requireLogin, async (req, res) => {
         <div class="success-icon">&#9989;</div>
         <h2>Tạo trang thành công!</h2>
         <p>Xem trang tại: <a href="/page/${id}" target="_blank">/page/${id}</a></p>
-        <a class="link-back" href="/">&larr; Quay lại</a>
+        <a class="link-back" href="/">&larr; Quay lại tổng quan</a>
       </div>
     `;
     res.send(layout(content));
@@ -348,19 +408,16 @@ app.get('/page/:id', async (req, res) => {
 
   try {
     const result = await pool.query('SELECT html_content, status FROM pages WHERE id = $1', [id]);
-
     if (result.rows.length === 0) {
       return res.status(404).send(layout('<p>Không tìm thấy trang này.</p>'));
     }
 
     const page = result.rows[0];
 
-    // Neu trang dang o che do nhap, khong cho nguoi ngoai xem noi dung that
     if (page.status === 'draft') {
       return res.send(layout('<div class="card" style="text-align:center;"><p>Trang này hiện đang ở chế độ nháp, chưa xuất bản.</p></div>'));
     }
 
-    // Tang so luot xem len 1 moi khi co nguoi vao xem trang da xuat ban
     await pool.query('UPDATE pages SET views = views + 1 WHERE id = $1', [id]);
 
     res.send(page.html_content);
@@ -394,7 +451,6 @@ app.get('/page/:id/submissions', requireLogin, async (req, res) => {
       'SELECT name FROM pages WHERE id = $1 AND owner_id = $2',
       [pageId, req.session.userId]
     );
-
     if (pageCheck.rows.length === 0) {
       return res.status(403).send(layout('<p>Bạn không có quyền xem trang này.</p>'));
     }
@@ -428,7 +484,7 @@ app.get('/page/:id/submissions', requireLogin, async (req, res) => {
       html += '</ul>';
     }
 
-    html += '</div><a class="link-back" href="/pages">&larr; Quay lại danh sách trang</a>';
+    html += '</div><a class="link-back" href="/">&larr; Quay lại tổng quan</a>';
     res.send(layout(html));
   } catch (err) {
     console.error(err);
@@ -444,7 +500,6 @@ app.get('/page/:id/export', requireLogin, async (req, res) => {
       'SELECT name FROM pages WHERE id = $1 AND owner_id = $2',
       [pageId, req.session.userId]
     );
-
     if (pageCheck.rows.length === 0) {
       return res.status(403).send(layout('<p>Bạn không có quyền xem trang này.</p>'));
     }
@@ -455,7 +510,7 @@ app.get('/page/:id/export', requireLogin, async (req, res) => {
     );
 
     if (result.rows.length === 0) {
-      return res.send(layout('<p>Chưa có dữ liệu nào để xuất.</p><a class="link-back" href="/pages">&larr; Quay lại</a>'));
+      return res.send(layout('<p>Chưa có dữ liệu nào để xuất.</p><a class="link-back" href="/">&larr; Quay lại</a>'));
     }
 
     const allKeys = new Set();
@@ -468,27 +523,16 @@ app.get('/page/:id/export', requireLogin, async (req, res) => {
     const workbook = new ExcelJS.Workbook();
     const sheet = workbook.addWorksheet('Dữ liệu form');
 
-    sheet.columns = headers.map(header => ({
-      header: header,
-      key: header,
-      width: 20
-    }));
-
+    sheet.columns = headers.map(header => ({ header: header, key: header, width: 20 }));
     sheet.getRow(1).font = { bold: true };
-    sheet.getRow(1).fill = {
-      type: 'pattern',
-      pattern: 'solid',
-      fgColor: { argb: 'FFE5E7EB' }
-    };
+    sheet.getRow(1).fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFE5E7EB' } };
 
     result.rows.forEach(row => {
       const rowData = {};
       headers.forEach(header => {
-        if (header === 'Thời gian') {
-          rowData[header] = new Date(row.created_at).toLocaleString('vi-VN');
-        } else {
-          rowData[header] = row.data[header];
-        }
+        rowData[header] = header === 'Thời gian'
+          ? new Date(row.created_at).toLocaleString('vi-VN')
+          : row.data[header];
       });
       sheet.addRow(rowData);
     });
@@ -522,7 +566,7 @@ app.get('/page/:id/export', requireLogin, async (req, res) => {
     res.status(500).send(layout('<p>Có lỗi khi xuất dữ liệu.</p>'));
   }
 });
-// Chuyen doi trang thai giua Dang chay va Nhap
+
 app.post('/page/:id/toggle-status', requireLogin, async (req, res) => {
   const id = req.params.id;
 
@@ -531,7 +575,6 @@ app.post('/page/:id/toggle-status', requireLogin, async (req, res) => {
       'SELECT status FROM pages WHERE id = $1 AND owner_id = $2',
       [id, req.session.userId]
     );
-
     if (check.rows.length === 0) {
       return res.status(403).send(layout('<p>Bạn không có quyền với trang này.</p>'));
     }
@@ -539,7 +582,7 @@ app.post('/page/:id/toggle-status', requireLogin, async (req, res) => {
     const newStatus = check.rows[0].status === 'live' ? 'draft' : 'live';
     await pool.query('UPDATE pages SET status = $1 WHERE id = $2', [newStatus, id]);
 
-    res.redirect('/pages');
+    res.redirect('/');
   } catch (err) {
     console.error(err);
     res.status(500).send(layout('<p>Có lỗi khi đổi trạng thái.</p>'));
@@ -550,11 +593,8 @@ app.post('/page/:id/delete', requireLogin, async (req, res) => {
   const id = req.params.id;
 
   try {
-    await pool.query(
-      'DELETE FROM pages WHERE id = $1 AND owner_id = $2',
-      [id, req.session.userId]
-    );
-    res.redirect('/pages');
+    await pool.query('DELETE FROM pages WHERE id = $1 AND owner_id = $2', [id, req.session.userId]);
+    res.redirect('/');
   } catch (err) {
     console.error(err);
     res.status(500).send(layout('<p>Có lỗi khi xóa trang.</p>'));
@@ -566,7 +606,7 @@ app.post('/page/:id/rename', requireLogin, async (req, res) => {
   const newName = req.body.newName;
 
   if (!newName || newName.trim() === '') {
-    return res.redirect('/pages');
+    return res.redirect('/');
   }
 
   try {
@@ -574,81 +614,10 @@ app.post('/page/:id/rename', requireLogin, async (req, res) => {
       'UPDATE pages SET name = $1 WHERE id = $2 AND owner_id = $3',
       [newName.trim(), id, req.session.userId]
     );
-    res.redirect('/pages');
+    res.redirect('/');
   } catch (err) {
     console.error(err);
     res.status(500).send(layout('<p>Có lỗi khi đổi tên.</p>'));
-  }
-});
-
-app.get('/pages', requireLogin, async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT p.id, p.name, p.created_at, p.views, p.status, COUNT(s.id) AS lead_count
-       FROM pages p
-       LEFT JOIN submissions s ON s.page_id = p.id
-       WHERE p.owner_id = $1
-       GROUP BY p.id
-       ORDER BY p.created_at DESC`,
-      [req.session.userId]
-    );
-    const pages = result.rows;
-
-    let listHtml = `
-      <h1>Trang của bạn</h1>
-      <p class="subtitle">Các trang bạn đã tạo</p>
-      <div class="card">
-    `;
-
-    if (pages.length === 0) {
-      listHtml += '<p>Chưa có trang nào.</p>';
-    } else {
-      listHtml += '<ul class="page-list">';
-      pages.forEach(page => {
-        const leadCount = parseInt(page.lead_count, 10);
-        const views = page.views || 0;
-        const conversionRate = views > 0 ? ((leadCount / views) * 100).toFixed(1) : '0.0';
-        const isLive = page.status === 'live';
-        const badge = isLive
-          ? '<span style="background:#E7F5EC; color:#1E8A4C; font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px;">&#9679; Đang chạy</span>'
-          : '<span style="background:#F0F0EC; color:#888; font-size:11px; font-weight:700; padding:3px 9px; border-radius:999px;">&#9675; Nháp</span>';
-
-        listHtml += `
-          <li style="display:block;">
-            <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:8px;">
-              <a href="/page/${page.id}" target="_blank" style="font-weight:700;">${page.name}</a>
-              ${badge}
-            </div>
-            <div style="display:flex; gap:16px; font-size:12px; color:#888; margin-bottom:8px;">
-              <span><strong>${views}</strong> lượt xem</span>
-              <span><strong>${leadCount}</strong> lead</span>
-              <span><strong>${conversionRate}%</strong> chuyển đổi</span>
-              <span>${new Date(page.created_at).toLocaleString('vi-VN')}</span>
-            </div>
-            <div><a href="/page/${page.id}/submissions" style="font-size: 13px;">Xem dữ liệu form &rarr;</a></div>
-            <div style="display: flex; gap: 8px; align-items: center; margin-top: 10px;">
-              <form action="/page/${page.id}/toggle-status" method="POST">
-                <button type="submit" style="padding: 6px 12px; font-size: 13px;">${isLive ? 'Chuyển sang Nháp' : 'Xuất bản (chuyển Live)'}</button>
-              </form>
-              <form action="/page/${page.id}/rename" method="POST" style="display: flex; gap: 6px;">
-                <input type="text" name="newName" placeholder="Tên mới" style="padding: 6px; font-size: 13px; width: 110px;" />
-                <button type="submit" style="padding: 6px 12px; font-size: 13px;">Đổi tên</button>
-              </form>
-              <form action="/page/${page.id}/delete" method="POST" onsubmit="return confirm('Bạn chắc chắn muốn xóa trang này?');">
-                <button type="submit" style="padding: 6px 12px; font-size: 13px; background: #dc2626;">Xóa</button>
-              </form>
-            </div>
-          </li>
-        `;
-      });
-      listHtml += '</ul>';
-    }
-
-    listHtml += '</div><a class="link-back" href="/">&larr; Quay lại trang tạo mới</a>';
-    res.send(layout(listHtml));
-  } catch (err) {
-    console.error(err);
-    res.status(500).send(layout('<p>Có lỗi khi lấy danh sách.</p>'));
   }
 });
 
