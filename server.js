@@ -109,7 +109,8 @@ function injectFormTracker(htmlCode, pageId) {
       }).catch(function(err) {
         console.error('Không gửi được dữ liệu form:', err);
       });
-    });
+      
+     }, true);
   });
 })();
 </script>
