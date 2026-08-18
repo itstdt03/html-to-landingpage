@@ -121,3 +121,11 @@ ul.page-list li:last-child {
   color: #9ca3af;
   font-size: 13px;
 }
+ul.page-list li form button {
+  border-radius: 6px;
+}
+
+ul.page-list li form input[type="text"] {
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+}

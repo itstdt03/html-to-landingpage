@@ -286,6 +286,42 @@ app.get('/page/:id', async (req, res) => {
     res.status(500).send(layout('<p>Co loi khi lay du lieu.</p>'));
   }
 });
+// Route xoa trang - chi cho phep xoa neu dung la chu trang
+app.post('/page/:id/delete', requireLogin, async (req, res) => {
+  const id = req.params.id;
+
+  try {
+    await pool.query(
+      'DELETE FROM pages WHERE id = $1 AND owner_id = $2',
+      [id, req.session.userId]
+    );
+    res.redirect('/pages');
+  } catch (err) {
+    console.error(err);
+    res.status(500).send(layout('<p>Co loi khi xoa trang.</p>'));
+  }
+});
+
+// Route doi ten trang - chi cho phep neu dung la chu trang
+app.post('/page/:id/rename', requireLogin, async (req, res) => {
+  const id = req.params.id;
+  const newName = req.body.newName;
+
+  if (!newName || newName.trim() === '') {
+    return res.redirect('/pages');
+  }
+
+  try {
+    await pool.query(
+      'UPDATE pages SET name = $1 WHERE id = $2 AND owner_id = $3',
+      [newName.trim(), id, req.session.userId]
+    );
+    res.redirect('/pages');
+  } catch (err) {
+    console.error(err);
+    res.status(500).send(layout('<p>Co loi khi doi ten.</p>'));
+  }
+});
 
 // Danh sach trang - chi hien thi trang cua CHINH nguoi dang dang nhap
 app.get('/pages', requireLogin, async (req, res) => {
@@ -309,8 +345,19 @@ app.get('/pages', requireLogin, async (req, res) => {
       pages.forEach(page => {
         listHtml += `
           <li>
-            <a href="/page/${page.id}" target="_blank">${page.name}</a>
-            <span class="page-time">${new Date(page.created_at).toLocaleString('vi-VN')}</span>
+            <div style="flex: 1;">
+              <a href="/page/${page.id}" target="_blank">${page.name}</a>
+              <div class="page-time">${new Date(page.created_at).toLocaleString('vi-VN')}</div>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <form action="/page/${page.id}/rename" method="POST" style="display: flex; gap: 6px;">
+                <input type="text" name="newName" placeholder="Ten moi" style="padding: 6px; font-size: 13px; width: 120px;" />
+                <button type="submit" style="padding: 6px 12px; font-size: 13px;">Doi ten</button>
+              </form>
+              <form action="/page/${page.id}/delete" method="POST" onsubmit="return confirm('Ban chac chan muon xoa trang nay?');">
+                <button type="submit" style="padding: 6px 12px; font-size: 13px; background: #dc2626;">Xoa</button>
+              </form>
+            </div>
           </li>
         `;
       });
