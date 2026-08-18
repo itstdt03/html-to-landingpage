@@ -430,6 +430,12 @@ app.get('/page/:id/export', requireLogin, async (req, res) => {
     function escapeCsvValue(value) {
       if (value === undefined || value === null) return '';
       const str = String(value);
+
+      // Neu gia tri toan la chu so (vi du so dien thoai) - ep Excel hieu la van ban, tranh bi doi thanh so khoa hoc
+      if (/^\d+$/.test(str)) {
+        return '="' + str + '"';
+      }
+
       if (str.includes(',') || str.includes('"') || str.includes('\n')) {
         return '"' + str.replace(/"/g, '""') + '"';
       }
