@@ -252,6 +252,7 @@ app.get('/', requireLogin, async (req, res) => {
     if (pages.length === 0) {
       listHtml += '<div class="card"><p style="font-size:14px; color:var(--ink-soft);">Chưa có trang nào. Bấm "Tạo landing page" để bắt đầu.</p></div>';
     } else {
+      listHtml += '<div class="page-grid">';
       pages.forEach(page => {
         const leadCount = parseInt(page.lead_count, 10);
         const views = page.views || 0;
@@ -262,20 +263,21 @@ app.get('/', requireLogin, async (req, res) => {
           : '<span class="badge badge-draft">&#9675; Nháp</span>';
 
         listHtml += `
-          <div class="page-card">
+          <a href="/page/${page.id}/manage" class="page-card">
             <div class="page-card-top">
-              <a href="/page/${page.id}/manage">${page.name}</a>
+              <span class="page-card-title">${page.name}</span>
               ${badge}
             </div>
+            <div class="page-slug">/page/${page.id}</div>
             <div class="page-stats">
-              <span><strong>${views}</strong> lượt xem</span>
-              <span><strong>${leadCount}</strong> lead</span>
-              <span><strong>${conversionRate}%</strong> chuyển đổi</span>
-              <span>${new Date(page.created_at).toLocaleString('vi-VN')}</span>
+              <span><strong>${views}</strong> Lượt xem</span>
+              <span><strong>${leadCount}</strong> Lead</span>
+              <span><strong>${conversionRate}%</strong> Chuyển đổi</span>
             </div>
-          </div>
+          </a>
         `;
       });
+      listHtml += '</div>';
     }
 
     res.send(layout(listHtml));
