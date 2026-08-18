@@ -5,6 +5,7 @@ const session = require('express-session');
 const pgSession = require('connect-pg-simple')(session);
 const multer = require('multer');
 const crypto = require('crypto');
+const ExcelJS = require('exceljs');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -46,7 +47,6 @@ async function initDb() {
     )
   `);
 
-  // Sua rang buoc khoa ngoai: cho phep xoa trang se tu dong xoa luon du lieu form lien quan
   await pool.query(`
     ALTER TABLE submissions DROP CONSTRAINT IF EXISTS submissions_page_id_fkey
   `);
@@ -100,7 +100,6 @@ function requireLogin(req, res, next) {
   next();
 }
 
-// Tự động chèn script thu dữ liệu form vào HTML trước khi lưu
 function injectFormTracker(htmlCode, pageId) {
   const trackerScript = `
 <script>
@@ -367,7 +366,7 @@ app.get('/page/:id/submissions', requireLogin, async (req, res) => {
 
     let html = `
       <h1>Dữ liệu form: ${pageCheck.rows[0].name}</h1>
-      <p style="margin-bottom: 16px;"><a href="/page/${pageId}/export">&#128190; Tải file CSV (mở bằng Excel/Google Sheets)</a></p>
+      <p style="margin-bottom: 16px;"><a href="/page/${pageId}/export">&#128190; Tải file Excel (.xlsx)</a></p>
       <div class="card">
     `;
 
@@ -397,7 +396,7 @@ app.get('/page/:id/submissions', requireLogin, async (req, res) => {
   }
 });
 
-// Xuat du lieu form ra file CSV de tai ve, mo duoc bang Excel/Google Sheets
+// Xuat du lieu form ra file Excel that (.xlsx), tu dong can chinh do rong cot
 app.get('/page/:id/export', requireLogin, async (req, res) => {
   const pageId = req.params.id;
 
@@ -427,38 +426,58 @@ app.get('/page/:id/export', requireLogin, async (req, res) => {
     const headers = Array.from(allKeys);
     headers.push('Thời gian');
 
-    function escapeCsvValue(value) {
-      if (value === undefined || value === null) return '';
-      const str = String(value);
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet('Dữ liệu form');
 
-      // Neu gia tri toan la chu so (vi du so dien thoai) - ep Excel hieu la van ban, tranh bi doi thanh so khoa hoc
-      if (/^\d+$/.test(str)) {
-        return '="' + str + '"';
-      }
+    sheet.columns = headers.map(header => ({
+      header: header,
+      key: header,
+      width: 20
+    }));
 
-      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
-        return '"' + str.replace(/"/g, '""') + '"';
-      }
-      return str;
-    }
-
-    let csvContent = headers.map(escapeCsvValue).join(',') + '\n';
+    sheet.getRow(1).font = { bold: true };
+    sheet.getRow(1).fill = {
+      type: 'pattern',
+      pattern: 'solid',
+      fgColor: { argb: 'FFE5E7EB' }
+    };
 
     result.rows.forEach(row => {
-      const line = headers.map(header => {
+      const rowData = {};
+      headers.forEach(header => {
         if (header === 'Thời gian') {
-          return escapeCsvValue(new Date(row.created_at).toLocaleString('vi-VN'));
+          rowData[header] = new Date(row.created_at).toLocaleString('vi-VN');
+        } else {
+          rowData[header] = row.data[header];
         }
-        return escapeCsvValue(row.data[header]);
-      }).join(',');
-      csvContent += line + '\n';
+      });
+      sheet.addRow(rowData);
     });
 
-    const csvWithBom = '\uFEFF' + csvContent;
+    headers.forEach((header, colIndex) => {
+      const column = sheet.getColumn(colIndex + 1);
+      column.eachCell({ includeEmpty: false }, function(cell, rowNumber) {
+        if (rowNumber === 1) return;
+        if (typeof cell.value === 'string' && /^\d+$/.test(cell.value)) {
+          cell.numFmt = '@';
+        }
+      });
+    });
 
-    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-    res.setHeader('Content-Disposition', `attachment; filename="du-lieu-form-${pageId}.csv"`);
-    res.send(csvWithBom);
+    sheet.columns.forEach(column => {
+      let maxLength = column.header ? column.header.length : 10;
+      column.eachCell({ includeEmpty: true }, function(cell) {
+        const len = cell.value ? String(cell.value).length : 0;
+        if (len > maxLength) maxLength = len;
+      });
+      column.width = maxLength + 4;
+    });
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="du-lieu-form-${pageId}.xlsx"`);
+
+    await workbook.xlsx.write(res);
+    res.end();
   } catch (err) {
     console.error(err);
     res.status(500).send(layout('<p>Có lỗi khi xuất dữ liệu.</p>'));
