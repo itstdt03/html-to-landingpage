@@ -38,6 +38,16 @@ async function initDb() {
     ALTER TABLE pages ADD COLUMN IF NOT EXISTS owner_id INTEGER REFERENCES users(id)
   `);
 
+  // Bang luu du lieu khach hang gui tu form tren landing page
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS submissions (
+      id SERIAL PRIMARY KEY,
+      page_id TEXT REFERENCES pages(id),
+      data JSONB NOT NULL,
+      created_at TIMESTAMP DEFAULT NOW()
+    )
+  `);
+
   console.log('Database da san sang.');
 }
 
@@ -286,6 +296,69 @@ app.get('/page/:id', async (req, res) => {
     res.status(500).send(layout('<p>Co loi khi lay du lieu.</p>'));
   }
 });
+// Route moi: nhan du lieu tu form tren landing page (goi bang fetch/JS)
+app.post('/page/:id/submit', express.json(), async (req, res) => {
+  const pageId = req.params.id;
+  const formData = req.body;
+
+  try {
+    await pool.query(
+      'INSERT INTO submissions (page_id, data) VALUES ($1, $2)',
+      [pageId, JSON.stringify(formData)]
+    );
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ success: false, error: 'Co loi khi luu du lieu.' });
+  }
+});
+// Xem danh sach du lieu form da thu duoc cho 1 trang - chi chu trang moi xem duoc
+app.get('/page/:id/submissions', requireLogin, async (req, res) => {
+  const pageId = req.params.id;
+
+  try {
+    // Kiem tra trang nay co dung la cua nguoi dang dang nhap khong
+    const pageCheck = await pool.query(
+      'SELECT name FROM pages WHERE id = $1 AND owner_id = $2',
+      [pageId, req.session.userId]
+    );
+
+    if (pageCheck.rows.length === 0) {
+      return res.status(403).send(layout('<p>Ban khong co quyen xem trang nay.</p>'));
+    }
+
+    const result = await pool.query(
+      'SELECT data, created_at FROM submissions WHERE page_id = $1 ORDER BY created_at DESC',
+      [pageId]
+    );
+
+    let html = `<h1>Du lieu form: ${pageCheck.rows[0].name}</h1><div class="card">`;
+
+    if (result.rows.length === 0) {
+      html += '<p>Chua co ai gui form nao.</p>';
+    } else {
+      html += '<ul class="page-list">';
+      result.rows.forEach(row => {
+        const fields = Object.entries(row.data)
+          .map(([key, value]) => `<strong>${key}:</strong> ${value}`)
+          .join(' &nbsp;|&nbsp; ');
+        html += `
+          <li style="display: block;">
+            <div>${fields}</div>
+            <div class="page-time">${new Date(row.created_at).toLocaleString('vi-VN')}</div>
+          </li>
+        `;
+      });
+      html += '</ul>';
+    }
+
+    html += '</div><a class="link-back" href="/pages">&larr; Quay lai danh sach trang</a>';
+    res.send(layout(html));
+  } catch (err) {
+    console.error(err);
+    res.status(500).send(layout('<p>Co loi khi lay du lieu.</p>'));
+  }
+});
 // Route xoa trang - chi cho phep xoa neu dung la chu trang
 app.post('/page/:id/delete', requireLogin, async (req, res) => {
   const id = req.params.id;
@@ -348,6 +421,7 @@ app.get('/pages', requireLogin, async (req, res) => {
             <div style="flex: 1;">
               <a href="/page/${page.id}" target="_blank">${page.name}</a>
               <div class="page-time">${new Date(page.created_at).toLocaleString('vi-VN')}</div>
+              <div><a href="/page/${page.id}/submissions" style="font-size: 13px;">Xem du lieu form &rarr;</a></div>
             </div>
             <div style="display: flex; gap: 8px; align-items: center;">
               <form action="/page/${page.id}/rename" method="POST" style="display: flex; gap: 6px;">
