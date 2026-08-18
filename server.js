@@ -224,32 +224,49 @@ app.get('/logout', (req, res) => {
 // ============ TRANG CHỦ ============
 app.get('/', requireLogin, (req, res) => {
   const content = `
-    <h1>Tạo landing page của bạn</h1>
-    <p class="subtitle">Upload file HTML hoặc dán code trực tiếp. <a href="/logout">Đăng xuất</a></p>
+    <h1>Tạo landing page từ HTML</h1>
+    <p class="subtitle"><a href="/logout">Đăng xuất</a></p>
 
-    <div class="card">
-      <h2>Cách 1: Upload file HTML</h2>
-      <form action="/upload" method="POST" enctype="multipart/form-data">
-        <input type="file" name="htmlFile" accept=".html" required />
-        <button type="submit">Upload</button>
-      </form>
+    <div class="card" style="background: #eff6ff; border-color: #bfdbfe; color: #1e40af; font-size: 14px;">
+      Dán hoặc upload 1 file HTML → hệ thống tự động xuất bản thành trang riêng của bạn.
     </div>
 
-    <div class="divider">hoặc</div>
-
     <div class="card">
-      <h2>Cách 2: Dán code HTML trực tiếp</h2>
       <form action="/paste" method="POST">
-        <textarea name="htmlCode" rows="12" placeholder="Dán code HTML vào đây..."></textarea>
-        <button type="submit">Tạo trang</button>
+        <label style="display:block; font-weight: 600; margin-bottom: 6px;">Tiêu đề trang <span style="color:#dc2626;">*</span></label>
+        <input type="text" name="pageName" placeholder="Vd: Landing ra mắt khóa học" required style="display:block; width:100%; padding:10px; margin-bottom:16px;" />
+
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px;">
+          <label style="font-weight: 600;">Nội dung HTML <span style="color:#dc2626;">*</span></label>
+          <label style="color: #4f46e5; cursor: pointer; font-size: 14px;">
+            Upload .html
+            <input type="file" id="fileUploadInput" accept=".html" style="display:none;" />
+          </label>
+        </div>
+        <textarea name="htmlCode" id="htmlCodeArea" rows="14" placeholder="<!doctype html> ... dán HTML ở đây ..." required></textarea>
+
+        <button type="submit" style="width: 100%; margin-top: 16px; padding: 14px;">Tạo landing page</button>
       </form>
     </div>
 
     <p><a href="/pages">Xem các trang của bạn &rarr;</a></p>
+
+    <script>
+      document.getElementById('fileUploadInput').addEventListener('change', function(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(evt) {
+          document.getElementById('htmlCodeArea').value = evt.target.result;
+        };
+        reader.readAsText(file, 'UTF-8');
+      });
+    </script>
   `;
   res.send(layout(content));
 });
 
+// Route upload cu - van giu lai phong khi can dung lai, khong con lien ket tu trang chu nua
 app.post('/upload', requireLogin, upload.single('htmlFile'), async (req, res) => {
   if (!req.file) {
     return res.send(layout('<p>Không có file nào được gửi lên.</p><a class="link-back" href="/">&larr; Quay lại</a>'));
@@ -257,7 +274,9 @@ app.post('/upload', requireLogin, upload.single('htmlFile'), async (req, res) =>
 
   const htmlCode = req.file.buffer.toString('utf-8');
   const id = crypto.randomBytes(6).toString('hex');
-  const name = req.file.originalname;
+  const name = (req.body.pageName && req.body.pageName.trim() !== '')
+    ? req.body.pageName.trim()
+    : req.file.originalname;
   const finalHtml = injectFormTracker(htmlCode, id);
 
   try {
@@ -283,13 +302,18 @@ app.post('/upload', requireLogin, upload.single('htmlFile'), async (req, res) =>
 
 app.post('/paste', requireLogin, async (req, res) => {
   const htmlCode = req.body.htmlCode;
+  const pageName = req.body.pageName;
 
   if (!htmlCode || htmlCode.trim() === '') {
-    return res.send(layout('<p>Bạn chưa dán code nào cả.</p><a class="link-back" href="/">&larr; Quay lại</a>'));
+    return res.send(layout('<p>Bạn chưa nhập nội dung HTML.</p><a class="link-back" href="/">&larr; Quay lại</a>'));
+  }
+
+  if (!pageName || pageName.trim() === '') {
+    return res.send(layout('<p>Bạn chưa đặt tiêu đề cho trang.</p><a class="link-back" href="/">&larr; Quay lại</a>'));
   }
 
   const id = crypto.randomBytes(6).toString('hex');
-  const name = 'Trang dán code (' + id + ')';
+  const name = pageName.trim();
   const finalHtml = injectFormTracker(htmlCode, id);
 
   try {
@@ -396,7 +420,6 @@ app.get('/page/:id/submissions', requireLogin, async (req, res) => {
   }
 });
 
-// Xuat du lieu form ra file Excel that (.xlsx), tu dong can chinh do rong cot
 app.get('/page/:id/export', requireLogin, async (req, res) => {
   const pageId = req.params.id;
 
