@@ -37,6 +37,7 @@ async function initDb() {
   await pool.query(`ALTER TABLE pages ADD COLUMN IF NOT EXISTS owner_id INTEGER REFERENCES users(id)`);
   await pool.query(`ALTER TABLE pages ADD COLUMN IF NOT EXISTS views INTEGER DEFAULT 0`);
   await pool.query(`ALTER TABLE pages ADD COLUMN IF NOT EXISTS status TEXT DEFAULT 'live'`);
+  await pool.query(`ALTER TABLE pages ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP DEFAULT NOW()`);
 
   await pool.query(`
     CREATE TABLE IF NOT EXISTS submissions (
@@ -419,10 +420,35 @@ app.get('/page/:id/manage', requireLogin, async (req, res) => {
 
     const page = result.rows[0];
     const isLive = page.status === 'live';
+    const badge = isLive
+      ? '<span class="badge badge-live">&#9679; Đang chạy</span>'
+      : '<span class="badge badge-draft">&#9675; Nháp</span>';
 
     const content = `
-      <h1>${page.name}</h1>
-      <p class="subtitle"><a href="/">&larr; Quay lại tổng quan</a></p>
+      <p class="back-link"><a href="/">&larr; Trang của bạn</a></p>
+
+      <div class="detail-header">
+        <div class="detail-title-row">
+          <h1>${page.name}</h1>
+          ${badge}
+        </div>
+        <div class="detail-slug">/page/${id}</div>
+        <div class="detail-meta">
+          Tạo ${new Date(page.created_at).toLocaleString('vi-VN')} &middot;
+          Sửa ${new Date(page.updated_at).toLocaleString('vi-VN')} &middot;
+          ${page.views || 0} lượt xem
+        </div>
+        <div class="detail-actions">
+          <a href="/page/${id}" target="_blank" class="btn btn-sm">Mở trang &#8599;</a>
+          <button type="button" class="btn btn-sm btn-outline" id="copyLinkBtn">Copy link</button>
+          <form action="/page/${id}/toggle-status" method="POST" style="display:inline;">
+            <button type="submit" class="btn btn-sm btn-outline">${isLive ? 'Gỡ xuống' : 'Xuất bản lại'}</button>
+          </form>
+          <form action="/page/${id}/delete" method="POST" style="display:inline;" onsubmit="return confirm('Bạn chắc chắn muốn xóa trang này? Không thể hoàn tác.');">
+            <button type="submit" class="btn btn-sm btn-outline-danger">Xóa</button>
+          </form>
+        </div>
+      </div>
 
       <div class="card">
         <h2>Xem trước</h2>
@@ -438,14 +464,6 @@ app.get('/page/:id/manage', requireLogin, async (req, res) => {
       </div>
 
       <div class="card">
-        <h2>Trạng thái</h2>
-        <p style="margin-bottom:14px; font-size:14px; color:var(--ink-soft);">Trang đang ở chế độ: <strong style="color:var(--ink);">${isLive ? 'Đang chạy (công khai)' : 'Nháp (chỉ bạn xem được)'}</strong></p>
-        <form action="/page/${id}/toggle-status" method="POST">
-          <button type="submit" class="${isLive ? 'btn-secondary' : ''}">${isLive ? 'Chuyển sang Nháp' : 'Xuất bản (chuyển Live)'}</button>
-        </form>
-      </div>
-
-      <div class="card">
         <h2>Sửa nội dung HTML</h2>
         <form action="/page/${id}/update-html" method="POST">
           <textarea name="htmlCode" rows="14">${page.html_content}</textarea>
@@ -455,12 +473,17 @@ app.get('/page/:id/manage', requireLogin, async (req, res) => {
 
       <p style="margin-bottom:18px;"><a href="/page/${id}/submissions">Xem dữ liệu form &rarr;</a></p>
 
-      <div class="card danger-zone">
-        <h2>Vùng nguy hiểm</h2>
-        <form action="/page/${id}/delete" method="POST" onsubmit="return confirm('Bạn chắc chắn muốn xóa trang này? Không thể hoàn tác.');">
-          <button type="submit" class="btn-danger">Xóa trang này</button>
-        </form>
-      </div>
+      <script>
+        document.getElementById('copyLinkBtn').addEventListener('click', function() {
+          const url = window.location.origin + '/page/${id}';
+          navigator.clipboard.writeText(url).then(function() {
+            const btn = document.getElementById('copyLinkBtn');
+            const oldText = btn.innerText;
+            btn.innerText = 'Đã copy!';
+            setTimeout(function() { btn.innerText = oldText; }, 1500);
+          });
+        });
+      </script>
     `;
     res.send(layout(content));
   } catch (err) {
@@ -508,7 +531,7 @@ app.post('/page/:id/update-html', requireLogin, async (req, res) => {
     }
 
     const finalHtml = injectFormTracker(htmlCode, id);
-    await pool.query('UPDATE pages SET html_content = $1 WHERE id = $2', [finalHtml, id]);
+    await pool.query('UPDATE pages SET html_content = $1, updated_at = NOW() WHERE id = $2', [finalHtml, id]);
 
     res.redirect(`/page/${id}/manage`);
   } catch (err) {
@@ -694,7 +717,7 @@ app.post('/page/:id/toggle-status', requireLogin, async (req, res) => {
     }
 
     const newStatus = check.rows[0].status === 'live' ? 'draft' : 'live';
-    await pool.query('UPDATE pages SET status = $1 WHERE id = $2', [newStatus, id]);
+    await pool.query('UPDATE pages SET status = $1, updated_at = NOW() WHERE id = $2', [newStatus, id]);
 
     res.redirect(`/page/${id}/manage`);
   } catch (err) {
@@ -725,7 +748,7 @@ app.post('/page/:id/rename', requireLogin, async (req, res) => {
 
   try {
     await pool.query(
-      'UPDATE pages SET name = $1 WHERE id = $2 AND owner_id = $3',
+      'UPDATE pages SET name = $1, updated_at = NOW() WHERE id = $2 AND owner_id = $3',
       [newName.trim(), id, req.session.userId]
     );
     res.redirect(`/page/${id}/manage`);
