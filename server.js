@@ -110,7 +110,6 @@ function injectFormTracker(htmlCode, pageId) {
       var formData = new FormData(form);
       var data = {};
       formData.forEach(function(value, key) {
-        // Tim placeholder cua o input de lam nhan hien thi de doc hon
         var inputEl = form.querySelector('[name="' + key + '"]');
         var label = (inputEl && inputEl.placeholder) ? inputEl.placeholder : key;
         data[label] = value;
@@ -122,8 +121,7 @@ function injectFormTracker(htmlCode, pageId) {
       }).catch(function(err) {
         console.error('Không gửi được dữ liệu form:', err);
       });
-      
-     }, true);
+    }, true);
   });
 })();
 </script>
@@ -367,7 +365,11 @@ app.get('/page/:id/submissions', requireLogin, async (req, res) => {
       [pageId]
     );
 
-    let html = `<h1>Dữ liệu form: ${pageCheck.rows[0].name}</h1><div class="card">`;
+    let html = `
+      <h1>Dữ liệu form: ${pageCheck.rows[0].name}</h1>
+      <p style="margin-bottom: 16px;"><a href="/page/${pageId}/export">&#128190; Tải file CSV (mở bằng Excel/Google Sheets)</a></p>
+      <div class="card">
+    `;
 
     if (result.rows.length === 0) {
       html += '<p>Chưa có ai gửi form nào.</p>';
@@ -392,6 +394,68 @@ app.get('/page/:id/submissions', requireLogin, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).send(layout('<p>Có lỗi khi lấy dữ liệu.</p>'));
+  }
+});
+
+// Xuat du lieu form ra file CSV de tai ve, mo duoc bang Excel/Google Sheets
+app.get('/page/:id/export', requireLogin, async (req, res) => {
+  const pageId = req.params.id;
+
+  try {
+    const pageCheck = await pool.query(
+      'SELECT name FROM pages WHERE id = $1 AND owner_id = $2',
+      [pageId, req.session.userId]
+    );
+
+    if (pageCheck.rows.length === 0) {
+      return res.status(403).send(layout('<p>Bạn không có quyền xem trang này.</p>'));
+    }
+
+    const result = await pool.query(
+      'SELECT data, created_at FROM submissions WHERE page_id = $1 ORDER BY created_at DESC',
+      [pageId]
+    );
+
+    if (result.rows.length === 0) {
+      return res.send(layout('<p>Chưa có dữ liệu nào để xuất.</p><a class="link-back" href="/pages">&larr; Quay lại</a>'));
+    }
+
+    const allKeys = new Set();
+    result.rows.forEach(row => {
+      Object.keys(row.data).forEach(key => allKeys.add(key));
+    });
+    const headers = Array.from(allKeys);
+    headers.push('Thời gian');
+
+    function escapeCsvValue(value) {
+      if (value === undefined || value === null) return '';
+      const str = String(value);
+      if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+        return '"' + str.replace(/"/g, '""') + '"';
+      }
+      return str;
+    }
+
+    let csvContent = headers.map(escapeCsvValue).join(',') + '\n';
+
+    result.rows.forEach(row => {
+      const line = headers.map(header => {
+        if (header === 'Thời gian') {
+          return escapeCsvValue(new Date(row.created_at).toLocaleString('vi-VN'));
+        }
+        return escapeCsvValue(row.data[header]);
+      }).join(',');
+      csvContent += line + '\n';
+    });
+
+    const csvWithBom = '\uFEFF' + csvContent;
+
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="du-lieu-form-${pageId}.csv"`);
+    res.send(csvWithBom);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send(layout('<p>Có lỗi khi xuất dữ liệu.</p>'));
   }
 });
 
