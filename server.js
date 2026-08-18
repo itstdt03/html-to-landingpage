@@ -100,7 +100,10 @@ function injectFormTracker(htmlCode, pageId) {
       var formData = new FormData(form);
       var data = {};
       formData.forEach(function(value, key) {
-        data[key] = value;
+        // Tim placeholder cua o input de lam nhan hien thi de doc hon
+        var inputEl = form.querySelector('[name="' + key + '"]');
+        var label = (inputEl && inputEl.placeholder) ? inputEl.placeholder : key;
+        data[label] = value;
       });
       fetch('/page/${pageId}/submit', {
         method: 'POST',
