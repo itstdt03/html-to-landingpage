@@ -46,6 +46,16 @@ async function initDb() {
     )
   `);
 
+  // Sua rang buoc khoa ngoai: cho phep xoa trang se tu dong xoa luon du lieu form lien quan
+  await pool.query(`
+    ALTER TABLE submissions DROP CONSTRAINT IF EXISTS submissions_page_id_fkey
+  `);
+  await pool.query(`
+    ALTER TABLE submissions
+    ADD CONSTRAINT submissions_page_id_fkey
+    FOREIGN KEY (page_id) REFERENCES pages(id) ON DELETE CASCADE
+  `);
+
   console.log('Database đã sẵn sàng.');
 }
 
